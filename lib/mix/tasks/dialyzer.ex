@@ -10,8 +10,7 @@ defmodule Mix.Tasks.Dialyzer do
 
     * `--no-compile`       - do not compile even if needed.
     * `--no-check`         - do not perform (quick) check to see if PLT needs update.
-    * `--force-check`      - force PLT check also if lock file is unchanged.
-       useful when dealing with local deps.
+    * `--force-check`      - force PLT check even if lock file is unchanged
     * `--ignore-exit-status` - display warnings but do not halt the VM or return an exit status code
     * `--list-unused-filters` - list unused ignore filters
       useful for CI. do not use with `mix do`.
@@ -243,13 +242,25 @@ defmodule Mix.Tasks.Dialyzer do
   defp check_plt(force_check?) do
     info("Checking PLT...")
     {apps, hash} = dependency_hash()
+    local_apps = local_deps()
 
-    if not force_check? and check_hash?(hash) do
-      info("PLT is up to date!")
-    else
-      Project.plts_list(apps) |> Plt.check()
-      File.write(plt_hash_file(), hash)
+    cond do
+      force_check? or not check_hash?(hash) ->
+        Project.plts_list(apps) |> Plt.check()
+        File.write(plt_hash_file(), hash)
+
+      local_apps != [] ->
+        Project.plts_list(local_apps) |> Plt.check()
+        File.write(plt_hash_file(), hash)
+
+      true ->
+        info("PLT is up to date!")
     end
+  end
+
+  defp local_deps() do
+    local_deps = for {k, Mix.SCM.Path} <- Mix.Project.deps_scms(), do: k
+    local_deps -- Map.keys(Mix.Project.apps_paths() || %{})
   end
 
   defp run_dialyzer(opts, dargs) do
